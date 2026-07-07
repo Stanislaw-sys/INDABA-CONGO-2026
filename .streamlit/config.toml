@@ -1,0 +1,7 @@
+# Thème aux couleurs nationales congolaises (vert · jaune · rouge).
+[theme]
+primaryColor = "#009543"          # vert
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F3FBF5"
+textColor = "#14261A"
+font = "sans serif"

@@ -1,0 +1,12 @@
+# Optional BERT / Sentence-Transformers experiment — SEPARATE from the deployed app.
+# The Streamlit app and the graded TF-IDF engine do NOT depend on any of this; it is
+# only needed to run `scripts/build_embeddings.py` and `scripts/compare_engines.py`.
+#
+# CPU-only — no GPU required. Install into the same venv:
+#     pip install -r requirements-bert.txt
+#
+# NB: do NOT add these to requirements.txt, torch would bloat the Streamlit free-tier
+# image and can exceed its ~1 GB RAM. Keep the deployed app on TF-IDF only.
+
+sentence-transformers>=2.2.0
+# torch is pulled in automatically; the default CPU wheel is sufficient.
