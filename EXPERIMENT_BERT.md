@@ -1,4 +1,4 @@
-# Expérience — Embeddings BERT vs TF-IDF (comparaison hors-ligne, CPU)
+# Expérience : Embeddings BERT vs TF-IDF (comparaison hors-ligne, CPU)
 
 Cette expérience mesure si des **embeddings sémantiques multilingues (BERT /
 Sentence-Transformers)** battent, ou complètent utilement, le moteur **TF-IDF** de
@@ -21,7 +21,7 @@ modifié.
 | Hybride α=0,7 | 0,374 | 0,227 | 0,623 | 0,757 | 0,622 | 0,683 |
 
 **Conclusion : TF-IDF l'emporte nettement.** BERT seul fait *moins de la moitié* (P@5 0,185
-vs 0,423) et, dans l'hybride, **chaque point de poids donné à BERT dégrade le score** —
+vs 0,423) et, dans l'hybride, **chaque point de poids donné à BERT dégrade le score**,
 plus α (part TF-IDF) est élevé, meilleur est le résultat. Autrement dit, l'apport
 sémantique de BERT est ici *négatif*.
 
@@ -73,7 +73,7 @@ Le script `compare_engines.py` affiche un tableau P@5/P@10/R@5/R@10/NDCG@5/NDCG@
 Ne **pas** charger le modèle dans l'app *free tier* (RAM ~1 Go). À la place :
 précalculer les embeddings hors-ligne, committer les `.npy`, et faire uniquement le
 cosinus dans l'app (aucun `torch`/`transformers` en production). La recherche en langage
-naturel *en direct* nécessite le modèle pour encoder la requête — la laisser sur TF-IDF,
+naturel *en direct* nécessite le modèle pour encoder la requête, la laisser sur TF-IDF,
 ou réserver la variante BERT à un usage local / à un hébergement doté de plus de RAM.
 
 ## Fichiers
