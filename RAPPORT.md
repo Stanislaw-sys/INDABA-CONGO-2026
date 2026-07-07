@@ -1,4 +1,4 @@
-# Rapport technique — Système intelligent d'appariement Demandeurs ↔ Offres d'emploi
+# Rapport technique : Système intelligent d'appariement Demandeurs & Offres d'emploi
 
 **Hackathon IndabaX Congo 2026 & Agence Congolaise pour l'Emploi (ACPE)**
 
@@ -44,7 +44,7 @@ Quatre fichiers Excel fournis, réconciliés dans un pipeline unique (`src/data_
   dégraderait le système. Le signal exploitable provient des champs **métier / qualification /
   filière / secteur métier**.
 
-### 2.1 Localisation des candidats — variable simulée
+### 2.1 Localisation des candidats : variable simulée
 
 Le fichier des demandeurs ne contient **aucune ville exploitable** (`Mobilité géographique` n'est
 qu'un indicateur Oui/Non). Or le guide demande la « répartition géographique … des candidats » dans
@@ -118,7 +118,7 @@ indépendants** :
    toute intersection vide dégrade les métriques, car de nombreuses vraies correspondances récompensées
    par la vérité terrain partagent la sémantique sans partager un token exact. La garde **douce et
    conditionnelle** ne s'active au contraire que sur le **mode de défaillance précis** que l'on veut
-   corriger — une offre **déjà bien classée mais sans aucun lien métier** (signature d'un détournement
+   corriger une offre **déjà bien classée mais sans aucun lien métier** (signature d'un détournement
    par des tokens diffus). Elle **rétrograde** ces hijacks en tête de liste **sans toucher** aux
    quasi-correspondances légitimes : sur l'ensemble des 41 285 demandeurs, la garde ne modifie qu'une
    poignée de cas par millier de candidats et **préserve exactement** Precision@K et NDCG@K (§5), tout
@@ -152,7 +152,7 @@ embeddings sémantiques). Nous avons évalué chaque famille au regard de **quat
 problème** : (i) l'appariement pèse 30 % de la note et l'**explicabilité** est explicitement
 récompensée ; (ii) la vérité terrain ne fournit que **3 offres pertinentes par candidat** (signal
 d'entraînement très maigre et déséquilibré) ; (iii) seules **143/2 535 offres** ont un descriptif
-détaillé — le texte est donc court et partiel ; (iv) le prototype doit **tourner sur l'hébergement
+détaillé, le texte est donc court et partiel ; (iv) le prototype doit **tourner sur l'hébergement
 gratuit** (CPU, ~1 Go RAM) et rester reproductible.
 
 | Approche | Avantages | Pourquoi écartée / retenue ici |
@@ -164,7 +164,7 @@ gratuit** (CPU, ~1 Go RAM) et rester reproductible.
 
 **Décision : un modèle hybride TF-IDF (0,80) + règle métier (0,20), en espaces multi-champs et
 régularisé par une garde sémantique douce.** Il maximise la qualité d'appariement *mesurée*
-(voir §5) tout en gardant chaque score **décomposable et justifiable** devant un conseiller —
+(voir §5) tout en gardant chaque score **décomposable et justifiable** devant un conseiller 
 critère décisif du jury, sans dépendance lourde ni entraînement fragile. La pondération 0,80/0,20
 a été retenue empiriquement (meilleur compromis Precision/NDCG sur échantillon) ; elle est isolée
 dans deux constantes (`W_TEXT`, `W_METIER`) et pourrait être apprise ultérieurement par
@@ -280,13 +280,13 @@ lourde : le système fonctionne intégralement sur scikit-learn (pas de GPU requ
   millier, métriques inchangées) et disparaîtrait avec un espace sémantique (ci-dessous).
 - **Embeddings sémantiques** : l'architecture est prévue pour accueillir un backend
   Sentence-Transformers (déjà anticipé dans `requirements.txt`), qui pourrait capter des synonymes
-  métier au-delà du recouvrement lexical — et rendre la garde robuste aux variantes lexicales.
+  métier au-delà du recouvrement lexical, et rendre la garde robuste aux variantes lexicales.
 - **Apprentissage supervisé** : la vérité terrain pourrait servir à apprendre les poids de
   combinaison (learning-to-rank) plutôt que de les fixer à 0,80 / 0,20.
 
 ## 10. Conclusion
 
-Le prototype répond à l'ensemble des livrables du hackathon — score de compatibilité expliqué,
+Le prototype répond à l'ensemble des livrables du hackathon, score de compatibilité expliqué,
 classement Top-5/Top-10 évalué (Precision/Recall/NDCG), tableau de bord, et les deux défis bonus
 au sein d'une solution **explicable, reproductible et légère**, directement mobilisable par les
 conseillers de l'ACPE pour accélérer et fiabiliser la mise en relation entre demandeurs et offres.
