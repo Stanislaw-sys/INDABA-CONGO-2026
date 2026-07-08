@@ -1,0 +1,375 @@
+% ============================================================================
+%  Rapport Technique — Système Intelligent d'Appariement ACPE
+%  Hackathon IndabaX Congo 2026 — Équipe S2M (Stanislas Mboungou Mangoubi)
+%
+%  Source LaTeX reconstruite et mise à jour (juillet 2026) :
+%   - §3.1 : calibration logistique rendue continue en 0 (correction de la fuite logistique)
+%   - §3.2 : Table 2 remplacée par le benchmark empirique TF-IDF vs BERT vs Hybrides
+%   - §5   : analyse scientifique de la supériorité du TF-IDF sur les embeddings BERT
+%
+%  Compilation :  pdflatex Rapport_INDABA_CG_2026.tex  (x2 pour les références)
+% ============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[french]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\usepackage[hidelinks]{hyperref}
+
+% En-tête / pied de page courants (comme dans le PDF d'origine).
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Système intelligent d'appariement ACPE}
+\rhead{\small Hackathon IndabaX Congo 2026}
+\lfoot{\small Équipe S2M~-- Stanislas Mboungou Mangoubi}
+\rfoot{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcommand{\raw}{\text{Score}_{\text{raw}}}
+
+\title{%
+  \vspace{-1.2cm}
+  {\normalsize \textsc{Agence Congolaise pour l'Emploi}}\\[0.6em]
+  \textbf{Rapport Technique : Système Intelligent d'Appariement\\
+  Demandeurs et Offreurs d'Emploi}\\[0.3em]
+  {\large Solution IA Explicable et Opérationnelle pour l'ACPE}}
+\author{Stanislas Mboungou Mangoubi, MSc. Actuariat\\
+  \small Email : \href{mailto:stanislasaigle@gmail.com}{stanislasaigle@gmail.com}\\
+  \small Hackathon IndabaX Congo 2026}
+\date{Juillet 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+% ---------------------------------------------------------------------------
+\section*{Résumé Exécutif}
+Ce rapport présente la conception technique du moteur d'appariement intelligent développé
+par l'équipe \textbf{S2M} pour l'Agence Congolaise pour l'Emploi (ACPE). Face à un volume
+critique de données (\textbf{41\,285} demandeurs pour \textbf{2\,535} offres), notre solution
+implémente une approche hybride unissant la \textbf{similarité textuelle vectorielle (TF-IDF
+Cosinus)} à des règles métiers déterministes. Conforme aux exigences du jury, ce système se
+distingue par son \textbf{explicabilité totale (XAI)} terme à terme, son équité algorithmique
+native, sa capacité d'analyse d'écarts de compétences (\emph{skill gap}) et un tableau de bord
+d'aide à la décision entièrement interactif et filtrable. Le choix du TF-IDF n'est pas un choix
+par défaut : il est \textbf{validé empiriquement} (\S\ref{sec:benchmark}) contre une alternative
+à base d'embeddings BERT, qu'il surpasse nettement sur nos données.
+
+% ---------------------------------------------------------------------------
+\section{Contexte et Problématique}
+L'Agence Congolaise pour l'Emploi (ACPE) occupe une position stratégique dans la régulation
+du marché du travail en République du Congo. Cependant, l'identification des meilleures
+correspondances entre les profils des demandeurs et les exigences des entreprises repose
+historiquement sur un traitement essentiellement manuel et chronophage. À l'ère de la science
+des données, l'absence d'un outil d'aide à la décision automatisé limite la réactivité des
+conseillers et la valorisation des informations collectées.
+
+L'enjeu de ce projet est de concevoir un prototype logiciel capable de calculer un score de
+compatibilité transparent, de générer des recommandations optimales de type Top-K (Top-5 et
+Top-10), et de fournir une interface opérationnelle immédiate sans nécessiter d'infrastructures
+de calcul lourdes ou coûteuses.
+
+% ---------------------------------------------------------------------------
+\section{Pipeline de Données et Préparation}
+L'intégration et la réconciliation des quatre bases de données fournies s'effectuent au sein
+d'un pipeline unifié (\texttt{src/data\_loader.py}). Le tableau~\ref{tab:donnees} résume les
+volumes et la structure après nettoyage complet.
+
+\begin{table}[h]
+\centering
+\caption{Structure et volumétrie des bases de données réconciliées}
+\label{tab:donnees}
+\small
+\begin{tabular}{@{}llrl@{}}
+\toprule
+\textbf{Fichier Source} & \textbf{Identifiant Clef} & \textbf{Volume} & \textbf{Rôle dans le Pipeline} \\
+\midrule
+\texttt{Demandeurs .xlsx}                 & Matricule       & 41\,285 & Profils textuels des demandeurs \\
+\texttt{Offres\_ACPE.xlsx}                & Référence offre & 2\,535  & Table de référence des offres \\
+\texttt{Offres\_ACPE\_Extensions.xlsx}    & Référence       & 143     & Enrichissement textuel libre \\
+\texttt{Appariement\_...\_Offres.xlsx}    & id\_demandeur   & 41\,285 & Vérité terrain (\emph{Ground Truth}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Décisions de Nettoyage et Alignement Structurant}
+\begin{itemize}
+  \item \textbf{Normalisation syntaxique :} les en-têtes contenant des espaces parasites ou des
+  accents (ex.\ \texttt{'offre\_pertinente~'}) ont été systématiquement nettoyés pour éviter les
+  échecs silencieux d'indexation.
+  \item \textbf{Fusion textuelle par complétude :} une analyse de cardinalité a prouvé que les
+  143 lignes du fichier d'extension ne constituaient pas de nouvelles offres mais un
+  enrichissement sémantique d'offres déjà existantes dans la table principale ; elles ont donc
+  été fusionnées par jointure gauche.
+  \item \textbf{Traitement des sentinelles :} la chaîne « Non déclaré », omniprésente dans les
+  données ($\sim 91\%$ pour le champ \emph{Secteur demandé}), est traitée explicitement comme une
+  valeur manquante (\texttt{NaN}) afin de ne pas biaiser la fréquence des termes du modèle.
+\end{itemize}
+
+\subsection{Simulation Déterministe de la Position Géographique}
+Le fichier initial des demandeurs ne présentant aucune variable de localisation exploitable,
+nous avons généré une variable synthétique de localité candidate sans altérer les fichiers
+sources. Afin d'assurer le réalisme du prototype, le tirage respecte strictement la
+\textbf{distribution probabiliste réelle} des offres (\texttt{Lieu}), concentrant ainsi les
+candidats simulés sur les bassins d'emploi effectifs (Brazzaville, Pointe-Noire, etc.). La
+reproductibilité est garantie par un hachage déterministe basé sur le \texttt{Matricule} du
+candidat. Cette variable simulée demeure un artefact analytique (carte du tableau de bord,
+exploration) : \textbf{elle n'entre jamais dans le calcul du score} d'appariement.
+
+% ---------------------------------------------------------------------------
+\section{Architecture du Moteur d'Appariement}
+Pour répondre simultanément aux critères de performance algorithmique (30\% de la note) et
+d'explicabilité, nous avons implémenté un modèle hybride combinant le traitement automatique du
+langage naturel (NLP) et des contraintes métiers.
+
+\subsection{Modélisation Mathématique}
+\label{sec:math}
+Le score brut d'appariement entre un candidat $c$ et une offre $o$ est défini par l'équation
+linéaire suivante :
+\begin{equation}
+\raw(c, o) = w_t \cdot \mathrm{Sim}_{\cos}(v_c, v_o) + w_m \cdot \mathrm{Recouvrement}(M_c, I_o)
+\end{equation}
+Où :
+\begin{itemize}
+  \item $v_c$ et $v_o$ représentent les vecteurs \textbf{TF-IDF} du candidat et de l'offre,
+  calculés sur un espace de n-grammes de longueur 1 à 2 (\texttt{ngram\_range=(1,2)}), filtrant
+  les termes apparaissant moins de deux fois (\texttt{min\_df=2}).
+  \item $\mathrm{Sim}_{\cos}$ désigne la similarité cosinus mesurant l'alignement directionnel
+  des profils :
+  \begin{equation}
+  \mathrm{Sim}_{\cos}(v_c, v_o) = \frac{v_c \cdot v_o}{\lVert v_c \rVert\,\lVert v_o \rVert}
+  \end{equation}
+  \item $\mathrm{Recouvrement}(M_c, I_o)$ mesure l'intersection normalisée des tokens entre le
+  \emph{Métier visé} ($M_c$) et l'\emph{Intitulé de l'offre} ($I_o$), agissant comme un
+  amplificateur de précision pour les correspondances exactes de l'intitulé du poste.
+  \item Les poids empiriques sont fixés à $w_t = 0{,}80$ et $w_m = 0{,}20$.
+\end{itemize}
+
+Pour l'affichage utilisateur, le score brut est projeté dans l'espace $[0, 100]$ via une
+fonction logistique de calibration cosmétique, strictement monotone, préservant parfaitement le
+rang. \textbf{Correction de la fuite logistique.} La sigmoïde brute mappe un score nul vers une
+valeur \emph{non nulle} : $100 / (1 + e^{0{,}15 \cdot 8}) \approx 23{,}1\%$. Or un score brut nul
+signifie une orthogonalité totale des vecteurs (aucun token en commun), c'est-à-dire une
+\emph{absence de correspondance} qui ne doit pas se lire comme $23\%$. Nous imposons donc une
+condition explicite $\mathrm{Compatibilité}(0) = 0$, rendant la calibration continue en zéro tout
+en restant monotone :
+\begin{equation}
+\mathrm{Compatibilité}(\%) =
+\begin{cases}
+0 & \text{si } \raw \leq 0, \\[6pt]
+\dfrac{100}{1 + e^{-8\,(\raw - 0{,}15)}} & \text{si } \raw > 0.
+\end{cases}
+\label{eq:calib}
+\end{equation}
+Cette condition élimine les « faux positifs à $23\%$ » et fonde le \textbf{seuil opérationnel
+d'affichage} ($45\%$) appliqué aux onglets de recherche : toute recommandation dont la
+compatibilité calibrée est inférieure à ce seuil est masquée plutôt que présentée au conseiller.
+
+\subsection{Justification Scientifique face aux Modèles Alternatifs}
+\label{sec:benchmark}
+Le choix de l'architecture hybride TF-IDF + Règles Métiers résulte d'un arbitrage rigoureux.
+Deux familles sont écartées sur des bases théoriques : les \textbf{règles métiers pures} (trop
+rigides — les taxonomies de secteurs divergent entre les fichiers, d'où une couverture médiocre),
+et le \textbf{Learning-to-Rank supervisé} (risque extrême de surapprentissage : la vérité terrain
+ne fournit que 3 positifs par candidat, sans négatifs explicites).
+
+L'alternative la plus sérieuse — les \textbf{embeddings sémantiques profonds (BERT / SBERT)} — a,
+elle, été \textbf{évaluée empiriquement} plutôt que rejetée sur principe. Nous avons encodé les
+2\,535 offres et 41\,285 profils avec un modèle multilingue léger et adapté au CPU
+(\texttt{paraphrase-multilingual-MiniLM-L12-v2}, 384 dimensions), puis comparé, sur la vérité
+terrain, le TF-IDF, le BERT pur et plusieurs hybrides $\alpha \cdot \text{TF-IDF} +
+(1-\alpha)\cdot\text{BERT}$. Le tableau~\ref{tab:benchmark} présente ce benchmark.
+
+\begin{table}[h]
+\centering
+\caption{Benchmark empirique des moteurs sur un échantillon de 4\,000 demandeurs (vérité terrain
+ACPE, CPU, embeddings précalculés). $\alpha$ = poids du TF-IDF dans l'hybride.}
+\label{tab:benchmark}
+\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+\textbf{Moteur} & \textbf{P@5} & \textbf{P@10} & \textbf{R@5} & \textbf{R@10} & \textbf{NDCG@5} & \textbf{NDCG@10} \\
+\midrule
+\textbf{TF-IDF (déployé)}          & \textbf{0,423} & \textbf{0,256} & \textbf{0,704} & \textbf{0,852} & \textbf{0,680} & \textbf{0,748} \\
+BERT (MiniLM multilingue)          & 0,185 & 0,125 & 0,308 & 0,415 & 0,279 & 0,328 \\
+Hybride $\alpha=0{,}3$             & 0,319 & 0,195 & 0,532 & 0,651 & 0,532 & 0,586 \\
+Hybride $\alpha=0{,}5$             & 0,354 & 0,216 & 0,590 & 0,720 & 0,595 & 0,655 \\
+Hybride $\alpha=0{,}7$             & 0,374 & 0,227 & 0,623 & 0,757 & 0,622 & 0,683 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Le verdict est sans appel : le TF-IDF domine sur toutes les métriques, et — signe décisif — la
+performance de l'hybride \textbf{croît de façon monotone avec $\alpha$}. L'analyse scientifique de
+ce résultat contre-intuitif est développée en \S\ref{sec:analyse}. Retenu : le
+\textbf{modèle hybride S2M (TF-IDF + Règle)}, explicable, léger (exécution CPU en $\sim$85 s pour
+41\,285 lignes) et empiriquement supérieur.
+
+% ---------------------------------------------------------------------------
+\section{Ingénierie de l'Explicabilité (XAI) et Équité}
+Conformément aux orientations du jury, l'explicabilité n'est pas une surcouche mais un pilier
+natif de l'algorithme :
+\begin{enumerate}
+  \item \textbf{Décomposition des composantes :} chaque conseiller ACPE voit la contribution
+  exacte de la sémantique (80\%) et de la règle métier (20\%).
+  \item \textbf{Extraction des termes déterminants :} la similarité cosinus étant une somme de
+  contributions terme à terme, le module \texttt{src/explain.py} isole et affiche les mots exacts
+  (ex.\ « transit », « logistique ») ayant provoqué la décision.
+  \item \textbf{Équité par conception (\emph{Fairness}) :} les variables sensibles telles que
+  l'âge et le genre sont explicitement exclues de la fonction de score. L'équité est totale,
+  auditable et garantie par l'architecture du code.
+\end{enumerate}
+
+% ---------------------------------------------------------------------------
+\section{Résultats et Métriques d'Évaluation}
+\label{sec:resultats}
+Le moteur a été évalué de manière exhaustive sur l'ensemble de la population de test (41\,285
+demandeurs) via le script batch \texttt{scripts/generate\_recommendations.py}. Les formules
+appliquées respectent les consignes officielles :
+\begin{equation}
+\mathrm{Precision@K} = \frac{|O_{\text{recommandées}} \cap O_{\text{pertinentes}}|}{K}, \quad
+\mathrm{Recall@K} = \frac{|O_{\text{recommandées}} \cap O_{\text{pertinentes}}|}{|O_{\text{totales\_pertinentes}}|}
+\end{equation}
+Le tableau~\ref{tab:perf} présente les performances globales obtenues.
+
+\begin{table}[h]
+\centering
+\caption{Performances globales validées face à la vérité terrain de l'ACPE (41\,285 demandeurs)}
+\label{tab:perf}
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Seuil d'Évaluation (K)} & \textbf{Precision@K} & \textbf{Recall@K} & \textbf{NDCG@K} \\
+\midrule
+Top-5 Recommandations  & 0,427 & 0,712 & 0,688 \\
+Top-10 Recommandations & 0,257 & 0,855 & 0,753 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Analyse des performances.} La vérité terrain limitant structurellement le nombre
+d'offres pertinentes à 3 par candidat, la $\mathrm{Precision@5}$ maximale théorique est
+mathématiquement plafonnée à $3/5 = 0{,}60$. Notre score de $0{,}427$ atteint ainsi
+\textbf{71,2\% du maximum théorique possible}. Le $\mathrm{Recall@10}$ de $0{,}855$ garantit que
+dans plus de \textbf{85\%} des cas, les conseillers trouvent l'offre idéale dans les 10 premières
+options suggérées par l'IA.
+
+\subsection{Analyse Scientifique : pourquoi le TF-IDF surpasse BERT sur nos données}
+\label{sec:analyse}
+Le benchmark de la Table~\ref{tab:benchmark} montre que BERT n'atteint que $0{,}185$ en
+$\mathrm{Precision@5}$, soit \textbf{moins de 44\%} de la performance du TF-IDF ($0{,}423$), et que
+chaque unité de poids transférée du TF-IDF vers BERT dans l'hybride \emph{dégrade} le score.
+L'apport sémantique de BERT est donc, sur ce corpus, non pas neutre mais \textbf{net négatif}.
+Ce résultat, contre-intuitif au premier abord, s'explique rigoureusement par trois mécanismes.
+
+\begin{enumerate}
+  \item \textbf{Pénurie de contexte sur des intitulés de 2 à 4 mots.} Les modèles de type SBERT
+  sont entraînés à encoder la sémantique \emph{de phrases} via l'auto-attention sur un contexte
+  étendu. Nos champs (« Agent de transit », « Statisticien ») sont des \emph{listes de mots-clés}
+  quasi dépourvues de contexte : l'attention n'a rien à contextualiser et les vecteurs se
+  concentrent dans un cône anisotrope étroit où le pouvoir discriminant s'effondre (phénomène
+  connu de l'anisotropie des représentations, cf.\ Ethayarajh, 2019 [7]). À l'inverse, le TF-IDF
+  est \emph{optimal} précisément sur des documents courts : la pondération IDF (Jones, 1972 [3])
+  maximise la spécificité des tokens rares et distinctifs (« transit », « statisticien »).
+
+  \item \textbf{Décalage de domaine (hors-distribution).} Le MiniLM multilingue est pré-entraîné
+  sur des corpus web/paraphrase généralistes, \emph{non} sur la taxonomie du marché de l'emploi
+  congolais. Les intitulés français spécialisés et la terminologie locale sont hors-distribution :
+  l'espace dense rapproche des rôles sémantiquement voisins mais faux (\emph{semantic smearing}),
+  d'où l'effondrement de la précision. Le TF-IDF, lui, est \textbf{adaptatif au corpus} : l'IDF est
+  estimé directement sur les données de l'ACPE, ce qui lui confère une pertinence de domaine que
+  l'embedding pré-entraîné ne possède pas.
+
+  \item \textbf{Alignement avec la nature de la vérité terrain.} L'appariement de référence de
+  l'ACPE repose massivement sur une correspondance \emph{lexicale} métier~$\leftrightarrow$~intitulé.
+  Les n-grammes du TF-IDF capturent directement ce signal, tandis que la généralisation sémantique
+  de BERT travaille \emph{contre} l'objectif : elle récupère des offres plausibles mais absentes de
+  la vérité terrain, ce que la $\mathrm{Precision}$ et le NDCG sanctionnent. La \textbf{dégradation
+  monotone} de l'hybride ($0{,}374 \to 0{,}354 \to 0{,}319$ à mesure que $\alpha$ décroît) est la
+  preuve empirique directe que le signal BERT s'éloigne de la vérité terrain plutôt qu'il ne la
+  complète.
+\end{enumerate}
+
+\paragraph{Corollaire décisionnel.} Même à performance égale, BERT resterait disqualifié par notre
+double contrainte : \emph{boîte noire} (perte de l'explicabilité XAI exigée par le jury) et
+empreinte GPU/RAM incompatible avec l'hébergement gratuit. Ici, il perd \emph{en plus} sur la
+précision. Le TF-IDF n'est donc pas un choix de repli mais l'option \textbf{scientifiquement
+optimale} pour ce régime de données : textes courts, domaine spécialisé, vérité terrain à
+alignement lexical. Un modèle spécialisé français (type CamemBERT) pourrait réduire l'écart, mais
+son ampleur ($0{,}185$ contre $0{,}423$) le rend improbable à renverser, sans résoudre les
+contraintes de coût ni d'explicabilité.
+
+% ---------------------------------------------------------------------------
+\section{Fonctionnalités Bonus et Exploitation Directe}
+Le prototype intègre pleinement les défis avancés requis pour transformer l'expérience
+utilisateur :
+\begin{itemize}
+  \item \textbf{Recherche intelligente en langage naturel (Bonus 1) :} un double moteur permet des
+  requêtes libres sur les offres et les candidats, avec détection automatique de la localité au
+  sein de la phrase. Une garde sémantique lexicale (tolérante aux racines, ex.\ « statistique »
+  $\to$ « statisticien ») isole les termes métiers des termes géographiques, empêchant qu'une
+  ville ne « détourne » le classement.
+  \item \textbf{Analyse des écarts de compétences (Bonus 2) :} le système extrait dynamiquement les
+  exigences manquantes (ex.\ Git, Power BI) pour orienter le citoyen vers des formations ciblées.
+  \item \textbf{Tableau de bord décisionnel interactif :} développé avec un design respectant la
+  charte chromatique nationale (Vert, Jaune, Rouge), l'onglet Dashboard permet aux conseillers de
+  filtrer dynamiquement les indicateurs (KPIs, histogrammes de compatibilité, cartographies
+  géographiques) par ville et secteur d'activité en temps réel.
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\section{Conclusion}
+La solution portée démontre qu'il est possible d'allier une haute précision mathématique à une
+transparence totale indispensable pour une agence publique. Le choix du TF-IDF, loin d'être un
+compromis, est \textbf{empiriquement démontré} supérieur aux embeddings profonds sur ce type de
+données. Léger, déterministe, sans dépendance matérielle lourde et immédiatement exploitable, ce
+prototype pose les fondations d'une intermédiation moderne et équitable pour l'emploi en
+République du Congo.
+
+% ---------------------------------------------------------------------------
+\section{Bibliographie Sélective}
+\begin{thebibliography}{9}
+\bibitem{salton} Salton, G., Wong, A., et Yang, C. S. (1975). \emph{A vector space model for
+automatic indexing.} Communications of the ACM, 18(11), 613-620. \\
+\textit{Apport clé :} fondation théorique du modèle d'espace vectoriel et de la similarité cosinus.
+
+\bibitem{jarvelin} Järvelin, K., et Kekäläinen, J. (2002). \emph{Cumulated gain-based evaluation of
+IR techniques.} ACM TOIS, 20(4), 422-446. \\
+\textit{Apport clé :} invention du NDCG, métrique maîtresse de notre évaluation.
+
+\bibitem{jones} Jones, K. S. (1972). \emph{A statistical interpretation of term specificity and its
+application in retrieval.} Journal of Documentation, 28(1), 11-21. \\
+\textit{Apport clé :} introduction de l'IDF pour pondérer la spécificité des mots-clés.
+
+\bibitem{manning} Manning, C. D., Raghavan, P., et Schütze, H. (2008). \emph{Introduction to
+Information Retrieval.} Cambridge University Press. \\
+\textit{Apport clé :} référence pour les structures textuelles et le calcul de Precision@K.
+
+\bibitem{lime} Ribeiro, M. T., Singh, S., et Guestrin, C. (2016). \emph{``Why should I trust
+you?'': Explaining the predictions of any classifier.} Proceedings of the ACM SIGKDD. \\
+\textit{Apport clé :} formalisation de l'IA explicable (XAI), justifiant le rejet des boîtes noires.
+
+\bibitem{fairness} Barocas, S., Hardt, M., et Narayanan, A. (2019). \emph{Fairness and Machine
+Learning.} fairmlbook.org. \\
+\textit{Apport clé :} cadre de l'équité par conception, dictant l'exclusion de l'âge et du genre.
+
+\bibitem{ethayarajh} Ethayarajh, K. (2019). \emph{How contextual are contextualized word
+representations? Comparing the geometry of BERT, ELMo, and GPT-2 embeddings.} EMNLP-IJCNLP. \\
+\textit{Apport clé :} met en évidence l'anisotropie des embeddings, expliquant l'effondrement du
+pouvoir discriminant sur nos intitulés très courts (\S\ref{sec:analyse}).
+
+\bibitem{sbert} Reimers, N., et Gurevych, I. (2019). \emph{Sentence-BERT: Sentence embeddings using
+Siamese BERT-networks.} EMNLP-IJCNLP. \\
+\textit{Apport clé :} modèle de référence pour les embeddings de phrases, évalué puis écarté au
+profit du TF-IDF sur nos données (\S\ref{sec:benchmark}).
+\end{thebibliography}
+
+\end{document}
