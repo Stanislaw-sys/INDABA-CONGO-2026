@@ -2,7 +2,6 @@
 
 **Hackathon IndabaX Congo 2026 & Agence Congolaise pour l'Emploi (ACPE)**
 
-- Dépôt GitHub : https://github.com/Stanislaw-sys/Hackathon-IndabaX-Congo-2026
 - Application déployée : https://hackathon-indabax-congo-2026-ldcrc3qrgpuipq3rlqbpa5.streamlit.app/
 
 ---
