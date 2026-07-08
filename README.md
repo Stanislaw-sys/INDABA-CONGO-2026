@@ -44,9 +44,17 @@ la **fiabilité opérationnelle** attendue sur le terrain.
    quasi-correspondances légitimes → **métriques préservées** (cf. Évaluation) et sécurité gagnée.
 5. **Score & calibration.** Score de classement = `0.80 × similarité_texte' + 0.20 × règle_métier`.
    Le pourcentage de compatibilité affiché est une calibration logistique (strictement monotone,
-   purement cosmétique, elle ne change jamais le classement). Un **seuil minimal d'affichage (45 %)**
+   purement cosmétique — elle ne change jamais le classement). Un **seuil minimal d'affichage (45 %)**
    masque côté interface les offres peu compatibles (sans affecter les CSV de soumission ni
    l'évaluation).
+6. **Garde d'intersection lexicale stricte (recherche).** Sur les **onglets d'exploration** (bonus 1),
+   un filtre **ET (AND)** exige qu'un mot-clé professionnel de la requête partage au moins un token
+   avec les champs cœur de l'offre / du candidat, sinon **rejet sous le seuil d'affichage** —
+   « Femme de ménage » ne remonte plus « Assistant de direction ». Le paramètre `substring=False`
+   bloque les sous-chaînes fortuites (« menage » dans « aménagement »), et le filtre de mobilité
+   nationale s'applique en **intersection stricte** (retour vide propre si aucun match). Ces barrières
+   **n'affectent que la recherche** — le scoring batch (`recommend_all`) et l'appariement noté sont
+   intacts.
 
 ### Pourquoi ce modèle plutôt qu'un autre ? (choix ML justifiés)
 Le guide autorise règles, TF-IDF, ML supervisé ou embeddings. Notre arbitrage :
@@ -54,14 +62,14 @@ Le guide autorise règles, TF-IDF, ML supervisé ou embeddings. Notre arbitrage 
 | Approche | Verdict |
 |---|---|
 | Règles métier seules | Trop rigides (taxonomies divergentes) — **gardées en complément** (0,20). |
-| **TF-IDF + cosinus** | Robuste, rapide, **explicable terme à terme**, sans entraînement, **cœur du moteur** (0,80). |
-| ML supervisé (LTR) | Vérité terrain trop maigre (3 positifs/candidat) → surapprentissage, **écarté**. |
-| Embeddings (SBERT) | Trop lourd pour le free tier, gain incertain sur textes courts, **architecture prête, non activé**. |
-| Garde **dure** (mise à zéro) | Sanctionne trop de quasi-correspondances → **dégrade** Precision@5/NDCG@5, **écartée**. |
-| **Garde douce conditionnelle** | N'agit que sur les détournements avérés, **métriques préservées, sécurité gagnée**, **retenue**. |
+| **TF-IDF + cosinus** | Robuste, rapide, **explicable terme à terme**, sans entraînement — **cœur du moteur** (0,80). |
+| ML supervisé (LTR) | Vérité terrain trop maigre (3 positifs/candidat) → surapprentissage — **écarté**. |
+| Embeddings (SBERT) | Trop lourd pour le free tier, gain incertain sur textes courts — **architecture prête, non activé**. |
+| Garde **dure** (mise à zéro) | Sanctionne trop de quasi-correspondances → **dégrade** Precision@5/NDCG@5 — **écartée**. |
+| **Garde douce conditionnelle** | N'agit que sur les détournements avérés — **métriques préservées, sécurité gagnée** — **retenue**. |
 
 Décision : **hybride TF-IDF (0,80) + règle métier (0,20)**, en **espaces multi-champs** et
-**garde sémantique douce**, meilleur compromis qualité / explicabilité / coût / fiabilité, chaque
+**garde sémantique douce** — meilleur compromis qualité / explicabilité / coût / fiabilité, chaque
 score restant décomposable pour le conseiller. Détails et équations dans `RAPPORT.md` (§3).
 
 ### Pourquoi pas les champs géographiques / secteur demandé dans le score ?
@@ -69,10 +77,10 @@ score restant décomposable pour le conseiller. Détails et équations dans `RAP
 `Secteur demandé` est « Non déclaré » à ~91 %. Bâtir des règles dures dessus dégraderait le système ;
 le signal exploitable provient des champs métier / qualification / filière. Le champ **`Lieu`** des
 offres, lui, est fiable : il alimente l'**espace géographique indépendant** utilisé pour la recherche
-d'offres localisée, mais **jamais** le score candidat ↔ offre (les candidats n'ont pas de vraie
+d'offres localisée — mais **jamais** le score candidat ↔ offre (les candidats n'ont pas de vraie
 ville). La **localité des candidats** est *simulée* de façon déterministe (clé = Matricule) suivant
 la distribution réelle des offres, uniquement pour la carte du tableau de bord et la recherche de
-candidats, voir `RAPPORT.md` §2.1 et §3.0.
+candidats — voir `RAPPORT.md` §2.1 et §3.0.
 
 ## Données
 
@@ -87,6 +95,15 @@ Nettoyage automatisé (`src/data_loader.py`) : normalisation des en-têtes (acce
 parasites), déduplication, traitement de « Non déclaré » comme valeur manquante, fusion de
 l'enrichissement texte dans la table d'offres.
 
+**Harmonisation catégorielle d'affichage** (colonnes `*_std`, dérivées *après* le texte de matching,
+sans toucher aux champs qui alimentent les vectorizers) : `secteur_std` fusionne les variantes brutes
+sous des étiquettes propres (p. ex. **« Agriculture & Agroalimentaire »** ; familles Sécurité,
+Transport/Logistique, Éducation, Énergie-Eau-Environnement, Tourisme-Hôtellerie) et alimente le
+**filtre sectoriel du tableau de bord** ; `metier_std` harmonise casse et genre (« Étudiant(e) »,
+« Logisticien(ne) »…) ; `niveau_etude` est mis en **majuscules** ; `statut_demandeur` classe le
+profil (Professionnel / Étudiant(e) / Stagiaire). Ces colonnes sont **purement analytiques** — le
+scoring lit les champs bruts, **métriques inchangées**.
+
 ## Évaluation
 
 Métriques du guide (Precision/Recall/NDCG @5 et @10) calculées contre la vérité terrain.
@@ -100,7 +117,9 @@ Métriques du guide (Precision/Recall/NDCG @5 et @10) calculées contre la véri
 
 Mesures **garde activée** : la garde sémantique douce étant ciblée sur les seuls détournements, elle
 **n'altère pas** ces métriques (écart nul au millième vs moteur non gardé) tout en supprimant les
-correspondances inter-métiers absurdes. _(Snapshot complet dans `eval_metrics.json` / `outputs/metrics.json`.)_
+correspondances inter-métiers absurdes. La **garde d'intersection lexicale stricte** (recherche) ne
+touche ni `recommend_all` ni l'appariement noté : les valeurs ci-dessus restent **rigoureusement
+inchangées**. _(Snapshot complet dans `eval_metrics.json` / `outputs/metrics.json`.)_
 
 ## Fonctionnalités
 
@@ -112,9 +131,11 @@ correspondances inter-métiers absurdes. _(Snapshot complet dans `eval_metrics.j
   métier + bonus de l'espace géographique quand une ville est citée) *et* sur les **candidats** (vue
   recruteur : filtres localité simulée + mobilité nationale, ville détectée automatiquement).
 - **Analyse d'écart de compétences (bonus 2)** : compétences/exigences de l'offre absentes du profil.
-- **Tableau de bord** : demandeurs/offres, secteurs & métiers dominants, **taux moyen de
-  compatibilité** + distribution, répartition géographique des **offres et des candidats**, types de
-  contrat, et **métriques d'évaluation** (Precision/Recall/NDCG @5/@10).
+- **Tableau de bord** : demandeurs/offres, **filtre sectoriel harmonisé**, secteurs & **métiers
+  techniques dominants** (hors « Étudiant(e) »/« Stagiaire », isolés dans une carte KPI **« Statut des
+  demandeurs d'emploi »**), **taux moyen de compatibilité** + distribution, répartition géographique
+  des **offres et des candidats**, **secteurs par type de contrat (CDI/CDD)**, et **métriques
+  d'évaluation** (Precision/Recall/NDCG @5/@10).
 - **Interface aux couleurs nationales** (vert · jaune · rouge) et signature **S2M**.
 
 ## Structure

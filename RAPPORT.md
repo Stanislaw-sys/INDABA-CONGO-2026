@@ -1,6 +1,6 @@
-# Rapport technique : Système intelligent d'appariement Demandeurs & Offres d'emploi
+# Rapport technique — Système intelligent d'appariement Demandeurs ↔ Offres d'emploi
 
-**Hackathon IndabaX Congo 2026 & Agence Congolaise pour l'Emploi (ACPE)**
+**Hackathon IndabaX Congo 2026 — Agence Congolaise pour l'Emploi (ACPE)**
 
 - Dépôt GitHub : https://github.com/Stanislaw-sys/Hackathon-IndabaX-Congo-2026
 - Application déployée : https://hackathon-indabax-congo-2026-ldcrc3qrgpuipq3rlqbpa5.streamlit.app/
@@ -13,7 +13,7 @@ L'ACPE met en relation demandeurs d'emploi et entreprises, mais l'identification
 correspondances reste manuelle, chronophage et peu reproductible. Notre objectif : un prototype
 fonctionnel qui, à partir des données de l'Agence, **calcule un score de compatibilité candidat ↔
 offre, classe automatiquement les meilleures offres (Top-5 / Top-10), explique chaque
-recommandation et identifie les écarts de compétences**, le tout exploitable directement par un
+recommandation et identifie les écarts de compétences** — le tout exploitable directement par un
 conseiller ACPE via une interface web.
 
 ## 2. Données et préparation
@@ -30,7 +30,7 @@ Quatre fichiers Excel fournis, réconciliés dans un pipeline unique (`src/data_
 **Nettoyage et décisions clés (toutes vérifiées sur les données) :**
 
 - **Normalisation des en-têtes** : les colonnes contiennent des accents et des espaces parasites
-  (`'offre_pertinente '`, `'Date de publication '`), systématiquement nettoyés.
+  (`'offre_pertinente '`, `'Date de publication '`) — systématiquement nettoyés.
 - **Déduplication** : 13 matricules et plusieurs `id_demandeur` en double sont supprimés.
 - **Sentinelle de valeur manquante** : la chaîne « Non déclaré » est traitée partout comme valeur
   absente (`src/utils.py`).
@@ -44,7 +44,7 @@ Quatre fichiers Excel fournis, réconciliés dans un pipeline unique (`src/data_
   dégraderait le système. Le signal exploitable provient des champs **métier / qualification /
   filière / secteur métier**.
 
-### 2.1 Localisation des candidats : variable simulée
+### 2.1 Localisation des candidats — variable simulée
 
 Le fichier des demandeurs ne contient **aucune ville exploitable** (`Mobilité géographique` n'est
 qu'un indicateur Oui/Non). Or le guide demande la « répartition géographique … des candidats » dans
@@ -59,6 +59,25 @@ jamais modifier les fichiers sources :
 - l'attribut est **étiqueté « simulé » partout** où il apparaît (interface et présent rapport) : il
   sert la démonstration et n'altère pas le moteur d'appariement, qui reste inchangé.
 
+### 2.2 Harmonisation catégorielle (affichage et pilotage)
+
+Les libellés catégoriels bruts sont fragmentés (variantes de casse, de genre, d'orthographe
+sectorielle). Nous dérivons donc, **après** figement du texte de matching et **sans** modifier les
+colonnes qui alimentent les vectorizers, des **colonnes harmonisées d'affichage** (`*_std`) :
+
+- **`secteur_std`** — fusion des variantes brutes sous des étiquettes unifiées propres : p. ex.
+  « Agriculture/Agroalimentaire » et « Agriculture & Industrie Agroalimentaire » → **« Agriculture &
+  Agroalimentaire »** ; familles également regroupées pour Sécurité, Transport/Logistique, Éducation,
+  Énergie-Eau-Environnement et Tourisme-Hôtellerie. Le **premier filtre interactif** du tableau de
+  bord s'appuie désormais sur cette colonne consolidée (fin des fragments bruts dans la liste).
+- **`metier_std`** / **`qualification_metier_std`** — casse harmonisée et regroupement du genre
+  (« Etudiant »/« Etudiante » → « Étudiant(e) », « Logisticien(ne) », « Caissier(ère) »…).
+- **`niveau_etude`** nettoyé en **majuscules** (« Aucun »/« aucun »/« AUCUN » → « AUCUN »).
+- **`statut_demandeur`** — Professionnel / Étudiant(e) / Stagiaire, exploité par le tableau de bord.
+
+> Ces colonnes sont **purement analytiques et d'affichage** : le cœur du scoring lit les champs
+> bruts, de sorte que les métriques (§5) restent rigoureusement inchangées.
+
 ## 3. Moteur d'appariement (méthodologie)
 
 Nous avons retenu une approche **hybride TF-IDF + règle métier**, structurée en **espaces
@@ -69,9 +88,9 @@ conseiller une correspondance manifestement absurde.
 
 ### 3.0 Espaces multi-champs (professionnel vs géographique)
 
-Pour éviter la **dilution sémantique**, le risque qu'un token fréquent et non métier (par ex. une
+Pour éviter la **dilution sémantique** — le risque qu'un token fréquent et non métier (par ex. une
 localité comme « Brazzaville ») rapproche artificiellement deux emplois sans rapport (un
-« chauffeur » et un « statisticien »), la vectorisation est **séparée en deux sous-espaces
+« chauffeur » et un « statisticien ») — la vectorisation est **séparée en deux sous-espaces
 indépendants** :
 
 - **Espace professionnel (cœur du moteur).** Seuls les champs métier sont vectorisés : côté
@@ -91,7 +110,7 @@ indépendants** :
 
 1. **Similarité textuelle (cœur du moteur).** Le profil du demandeur est vectorisé en **TF-IDF avec
    n-grammes de longueur 1 à 2**, chaque offre de même dans l'espace professionnel. La compatibilité
-   est la **similarité cosinus** entre les deux vecteurs, avec **normalisation L2**, celle-ci borne
+   est la **similarité cosinus** entre les deux vecteurs, avec **normalisation L2** — celle-ci borne
    naturellement l'effet de la longueur, de sorte qu'une description enrichie longue et un intitulé
    court se comparent équitablement.
    *Justification :* les taxonomies de secteurs diffèrent entre les deux côtés. Une correspondance
@@ -118,7 +137,7 @@ indépendants** :
    toute intersection vide dégrade les métriques, car de nombreuses vraies correspondances récompensées
    par la vérité terrain partagent la sémantique sans partager un token exact. La garde **douce et
    conditionnelle** ne s'active au contraire que sur le **mode de défaillance précis** que l'on veut
-   corriger une offre **déjà bien classée mais sans aucun lien métier** (signature d'un détournement
+   corriger — une offre **déjà bien classée mais sans aucun lien métier** (signature d'un détournement
    par des tokens diffus). Elle **rétrograde** ces hijacks en tête de liste **sans toucher** aux
    quasi-correspondances légitimes : sur l'ensemble des 41 285 demandeurs, la garde ne modifie qu'une
    poignée de cas par millier de candidats et **préserve exactement** Precision@K et NDCG@K (§5), tout
@@ -152,7 +171,7 @@ embeddings sémantiques). Nous avons évalué chaque famille au regard de **quat
 problème** : (i) l'appariement pèse 30 % de la note et l'**explicabilité** est explicitement
 récompensée ; (ii) la vérité terrain ne fournit que **3 offres pertinentes par candidat** (signal
 d'entraînement très maigre et déséquilibré) ; (iii) seules **143/2 535 offres** ont un descriptif
-détaillé, le texte est donc court et partiel ; (iv) le prototype doit **tourner sur l'hébergement
+détaillé — le texte est donc court et partiel ; (iv) le prototype doit **tourner sur l'hébergement
 gratuit** (CPU, ~1 Go RAM) et rester reproductible.
 
 | Approche | Avantages | Pourquoi écartée / retenue ici |
@@ -164,8 +183,8 @@ gratuit** (CPU, ~1 Go RAM) et rester reproductible.
 
 **Décision : un modèle hybride TF-IDF (0,80) + règle métier (0,20), en espaces multi-champs et
 régularisé par une garde sémantique douce.** Il maximise la qualité d'appariement *mesurée*
-(voir §5) tout en gardant chaque score **décomposable et justifiable** devant un conseiller 
-critère décisif du jury, sans dépendance lourde ni entraînement fragile. La pondération 0,80/0,20
+(voir §5) tout en gardant chaque score **décomposable et justifiable** devant un conseiller —
+critère décisif du jury —, sans dépendance lourde ni entraînement fragile. La pondération 0,80/0,20
 a été retenue empiriquement (meilleur compromis Precision/NDCG sur échantillon) ; elle est isolée
 dans deux constantes (`W_TEXT`, `W_METIER`) et pourrait être apprise ultérieurement par
 learning-to-rank sans changer l'architecture.
@@ -173,18 +192,39 @@ learning-to-rank sans changer l'architecture.
 *Choix d'une garde douce plutôt que dure.* Une coupure dure de la similarité (mise à zéro dès
 qu'aucun token métier n'est partagé) a été testée : elle **dégrade** Precision@5 et NDCG@5 (elle
 sanctionne trop de quasi-correspondances récompensées par la vérité terrain). La **garde douce et
-conditionnelle** retenue (§3.1-3) n'agit que sur les détournements avérés & score déjà élevé *et*
-zéro recouvrement métier ; mesurée sur l'ensemble de la base, elle **conserve intégralement** les
+conditionnelle** retenue (§3.1-3) n'agit que sur les détournements avérés — score déjà élevé *et*
+zéro recouvrement métier — ; mesurée sur l'ensemble de la base, elle **conserve intégralement** les
 métriques (§5) tout en éliminant les correspondances inter-métiers absurdes. C'est une
 **régularisation** au sens propre : un a priori qui pénalise les configurations improbables sans
 pénaliser les bonnes.
+
+### 3.4 Garde d'intersection lexicale stricte (onglets de recherche)
+
+La garde douce (§3.1-3) protège le **cœur** du moteur. Les **onglets d'exploration sémantique
+visuelle** (recherche d'offres et de candidats, bonus 1) ajoutent une seconde barrière, plus
+stricte, contre les **faux positifs à bas score** qui polluaient le bas du classement :
+
+- **Filtre d'intersection lexicale (ET logique).** Une offre — resp. un candidat — n'est retenue que
+  si le mot-clé professionnel de la requête (ou du métier visé) partage **au moins un token** avec
+  ses champs cœur (intitulé / poste / secteur). À défaut, elle est **rejetée sous le seuil
+  d'affichage (45 %)** plutôt que de combler le Top-K : une recherche **« Femme de ménage »** ne
+  remonte ainsi plus un poste d'**« Assistant de direction »** (`search_offers` / `search_candidates`).
+- **Anti sous-chaîne fortuite (`substring=False`).** La relation lexicale n'admet qu'un **préfixe**
+  (radical / flexion), et non une sous-chaîne au milieu d'un mot : « menage » ne matche donc plus
+  « aménagement ».
+- **Mobilité nationale — intersection stricte.** Le filtre « mobilité nationale uniquement » se
+  combine en **ET** avec les autres critères ; si l'intersection est vide, le système renvoie un
+  **résultat vide propre** au lieu de lignes hors-sujet.
+
+> Ces barrières agissent **exclusivement** sur les onglets de recherche/exploration : le scoring
+> batch (`recommend_all`) et l'appariement noté demeurent intacts (§5).
 
 ## 4. Score de compatibilité et explicabilité
 
 Pour chaque recommandation, le système restitue :
 
 - la **décomposition du score** (part textuelle vs part règle métier) ;
-- les **termes déterminants** : les mots dont le produit TF-IDF candidat × offre contribue le plus
+- les **termes déterminants** — les mots dont le produit TF-IDF candidat × offre contribue le plus
   au cosinus (`src/explain.py::top_matching_terms`), ce qui répond directement à la demande du jury
   d'« expliquer les variables ayant contribué au score » ;
 - l'**analyse d'écart de compétences** (voir bonus 2).
@@ -210,7 +250,7 @@ Le système produit pour chaque demandeur les Top-5 et Top-10 offres, au format 
 *Lecture des résultats :* chaque candidat n'ayant que **3 offres pertinentes**, la Precision@5 est
 plafonnée à 3/5 = 0,60 et la Precision@10 à 3/10 = 0,30. Notre Precision@5 de 0,427 atteint donc
 **~71 % du maximum théorique**. Le Recall@10 de 0,855 signifie que, dans plus de 85 % des cas, les
-offres de référence figurent dans les 10 premières recommandations, un résultat directement
+offres de référence figurent dans les 10 premières recommandations — un résultat directement
 exploitable pour assister les conseillers.
 
 *Effet de la garde sémantique douce :* ces chiffres sont mesurés **garde activée**. La garde étant
@@ -218,13 +258,19 @@ ciblée sur les seuls détournements (score élevé sans lien métier), elle **n
 métriques par rapport au moteur non gardé (écart nul au millième sur Precision@5 / NDCG@5) : elle
 apporte la sécurité opérationnelle **sans coût de performance**.
 
+*Garde d'intersection lexicale stricte (§3.4) :* elle s'applique **uniquement** aux onglets de
+recherche sémantique visuelle et **ne touche ni `recommend_all` ni l'appariement noté**. Le cœur du
+modèle de scoring batch est donc **rigoureusement inchangé**, et les valeurs ci-dessus
+(**P@5 = 0,427**, **NDCG@5 = 0,688**) restent identiques : ces barrières logiques ne visent que le
+confort d'exploration, pas la performance mesurée.
+
 ## 6. Fonctionnalités bonus
 
-- **Bonus 1 : Recherche intelligente (langage naturel), offres *et* candidats.**
+- **Bonus 1 — Recherche intelligente (langage naturel), offres *et* candidats.**
   - *Côté offres* : la requête (« développeur informatique à Brazzaville ») est vectorisée dans
     l'espace **professionnel** et classée par similarité cosinus ; si elle mentionne une localité
     connue, l'**espace géographique indépendant** (§3.0) ajoute un bonus aux offres effectivement
-    situées dans cette ville, la localité oriente donc la recherche **sans jamais contaminer** le
+    situées dans cette ville — la localité oriente donc la recherche **sans jamais contaminer** le
     vecteur métier (`src/matching.py::search_offers`).
   - *Côté candidats (vue recruteur/conseiller)* : un second espace TF-IDF est construit sur les
     profils des 41 285 demandeurs. La requête « un développeur python à Brazzaville » est classée par
@@ -232,7 +278,7 @@ apporte la sécurité opérationnelle **sans coût de performance**.
     filtres ; la ville mentionnée dans la phrase est **détectée automatiquement**
     (`src/matching.py::search_candidates`). Cela couvre les deux exemples du guide
     (« développeur Python à Brazzaville », « candidat en comptabilité avec mobilité nationale »).
-- **Bonus 2 : Analyse des écarts de compétences (skill gap).** Pour chaque offre recommandée, le
+- **Bonus 2 — Analyse des écarts de compétences (skill gap).** Pour chaque offre recommandée, le
   système extrait les compétences/exigences (issues du descriptif enrichi lorsqu'il existe, sinon de
   l'intitulé et du secteur), retire les mots-outils, et renvoie celles absentes du profil du
   candidat ainsi qu'un taux de couverture (`src/explain.py::skill_gap`). Cela oriente le demandeur
@@ -246,6 +292,12 @@ plus demandés, **taux moyen de compatibilité** (moyenne des Top-5 sur échanti
 distribution), **répartition géographique des offres *et* des candidats** (cette dernière sur la
 localité simulée, §2.1), types de contrat, et **statistiques sur les recommandations générées**
 (tableau Precision/Recall/NDCG @5/@10 vs vérité terrain, cf. `eval_metrics.json`).
+
+Depuis l'harmonisation catégorielle (§2.2), le **filtre sectoriel** propose des étiquettes
+consolidées ; le graphique des **métiers techniques les plus demandés exclut** les profils
+**« Étudiant(e) »** et **« Stagiaire »** — désormais isolés dans une **carte KPI dédiée « Statut des
+demandeurs d'emploi »**, afin de ne pas fausser le classement des vrais métiers ; enfin une vue
+croise les **secteurs offrant le plus d'opportunités par type de contrat (CDI / CDD)**.
 
 ## 8. Architecture technique et reproductibilité
 
@@ -280,13 +332,13 @@ lourde : le système fonctionne intégralement sur scikit-learn (pas de GPU requ
   millier, métriques inchangées) et disparaîtrait avec un espace sémantique (ci-dessous).
 - **Embeddings sémantiques** : l'architecture est prévue pour accueillir un backend
   Sentence-Transformers (déjà anticipé dans `requirements.txt`), qui pourrait capter des synonymes
-  métier au-delà du recouvrement lexical, et rendre la garde robuste aux variantes lexicales.
+  métier au-delà du recouvrement lexical — et rendre la garde robuste aux variantes lexicales.
 - **Apprentissage supervisé** : la vérité terrain pourrait servir à apprendre les poids de
   combinaison (learning-to-rank) plutôt que de les fixer à 0,80 / 0,20.
 
 ## 10. Conclusion
 
-Le prototype répond à l'ensemble des livrables du hackathon, score de compatibilité expliqué,
-classement Top-5/Top-10 évalué (Precision/Recall/NDCG), tableau de bord, et les deux défis bonus
+Le prototype répond à l'ensemble des livrables du hackathon — score de compatibilité expliqué,
+classement Top-5/Top-10 évalué (Precision/Recall/NDCG), tableau de bord, et les deux défis bonus —
 au sein d'une solution **explicable, reproductible et légère**, directement mobilisable par les
 conseillers de l'ACPE pour accélérer et fiabiliser la mise en relation entre demandeurs et offres.
