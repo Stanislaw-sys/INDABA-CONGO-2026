@@ -19,7 +19,16 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from src.data_loader import SIMULATED_CITY_COL, load_bundle
+from src.data_loader import (
+    PRO_LABEL,
+    STAGIAIRE_LABEL,
+    STATUT_COL,
+    STD_METIER_COL,
+    STD_SECTOR_COL,
+    STUDENT_LABEL,
+    SIMULATED_CITY_COL,
+    load_bundle,
+)
 from src.explain import skill_gap, top_matching_terms
 from src.matching import MIN_COMPATIBILITY, MatchingEngine
 from src.utils import is_missing
@@ -430,9 +439,12 @@ elif nav == NAV_DASH:
     st.subheader("📊 Tableau de bord décisionnel ACPE")
 
     # ---------------------------------------------------------------- Filtres
-    metier_col = "Métier visé / Qualification visée"
+    # Métiers affichés = libellés harmonisés (casse + genre regroupés) ; le score
+    # d'appariement continue d'utiliser les colonnes brutes (métriques inchangées).
+    metier_col = STD_METIER_COL
+    # Options du filtre = libellés de secteur harmonisés (plus de fragments bruts).
     sector_opts = sorted(
-        s for s in off_df["Secteur activité"].dropna().astype(str).str.strip().unique() if s
+        s for s in off_df[STD_SECTOR_COL].dropna().astype(str).str.strip().unique() if s
     )
     niveau_opts = sorted(
         n for n in cand_df["niveau_etude"].dropna().astype(str).str.strip().unique() if n
@@ -450,7 +462,7 @@ elif nav == NAV_DASH:
     # ------------------------------------------------- Application des filtres
     off_f = off_df
     if sel_sectors:
-        off_f = off_f[off_f["Secteur activité"].astype(str).str.strip().isin(sel_sectors)]
+        off_f = off_f[off_f[STD_SECTOR_COL].astype(str).str.strip().isin(sel_sectors)]
     if sel_cities:
         off_f = off_f[off_f["Lieu"].astype(str).str.strip().str.title().isin(sel_cities)]
 
@@ -482,15 +494,39 @@ elif nav == NAV_DASH:
         st.warning("Aucune donnée ne correspond à ces filtres. Élargissez la sélection.")
         st.stop()
 
+    # -------------------------------------------- Statut des demandeurs d'emploi
+    # Les profils « Étudiant(e) » / « Stagiaire » ne sont pas des métiers techniques :
+    # on les isole ici pour ne pas fausser le classement des vrais métiers plus bas.
+    with st.container(border=True):
+        st.markdown("**🎓 Statut des demandeurs d'emploi**")
+        statut = cand_f[STATUT_COL].value_counts()
+        n_pro = int(statut.get(PRO_LABEL, 0))
+        n_etu = int(statut.get(STUDENT_LABEL, 0))
+        n_stg = int(statut.get(STAGIAIRE_LABEL, 0))
+        total = max(len(cand_f), 1)
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Professionnels / en activité", f"{n_pro:,}",
+                  help=f"{n_pro / total * 100:.1f} % des demandeurs filtrés.")
+        s2.metric("Étudiant(e)s", f"{n_etu:,}",
+                  help=f"{n_etu / total * 100:.1f} % des demandeurs filtrés.")
+        s3.metric("Stagiaires", f"{n_stg:,}",
+                  help=f"{n_stg / total * 100:.1f} % des demandeurs filtrés.")
+        st.caption(
+            "Les étudiant(e)s et stagiaires sont **exclus** du graphique des métiers "
+            "techniques ci-dessous pour ne refléter que les métiers réellement exercés."
+        )
+
     # ----------------------------------------------------- Barres : métiers / secteurs
     c1, c2 = st.columns(2)
     with c1:
-        top_met = (cand_f[metier_col].replace("", pd.NA).dropna()
+        # Hors étudiants / stagiaires (comptabilisés dans la carte « Statut » ci-dessus).
+        metier_tech = cand_f[~cand_f[STATUT_COL].isin([STUDENT_LABEL, STAGIAIRE_LABEL])]
+        top_met = (metier_tech[metier_col].replace("", pd.NA).dropna()
                    .value_counts().head(10).reset_index())
         top_met.columns = ["Métier visé", "Demandeurs"]
         st.plotly_chart(
             px.bar(top_met, x="Demandeurs", y="Métier visé", orientation="h",
-                   title="Métiers les plus demandés (demandeurs)",
+                   title="Métiers techniques les plus demandés (hors étudiants / stagiaires)",
                    color_discrete_sequence=[CONGO_GREEN]),
             use_container_width=True,
         )
@@ -528,6 +564,39 @@ elif nav == NAV_DASH:
             "Localité *simulée* par tirage déterministe (clé = Matricule) suivant la "
             "distribution géographique réelle des offres — fichiers sources non modifiés."
         )
+
+    # ---------------------- Secteurs offrant le plus d'opportunités par contrat
+    with st.container(border=True):
+        st.markdown(
+            "**🏭 Top des secteurs d'activité offrant le plus d'opportunités "
+            "par type de contrat (CDI / CDD)**"
+        )
+        cross = off_f.copy()
+        cross["_contrat"] = cross["Type contrat"].astype(str).str.strip().str.upper()
+        cross = cross[cross["_contrat"].isin(["CDI", "CDD"])]
+        cross["_secteur"] = cross[STD_SECTOR_COL].replace("", pd.NA)
+        cross = cross.dropna(subset=["_secteur"])
+        if len(cross):
+            top_secs = cross["_secteur"].value_counts().head(8).index.tolist()
+            grp = (cross[cross["_secteur"].isin(top_secs)]
+                   .groupby(["_secteur", "_contrat"]).size().reset_index(name="Offres"))
+            grp.columns = ["Secteur", "Type de contrat", "Offres"]
+            st.plotly_chart(
+                px.bar(
+                    grp, x="Offres", y="Secteur", color="Type de contrat",
+                    orientation="h", barmode="group",
+                    title="Opportunités par secteur et type de contrat (CDI / CDD)",
+                    color_discrete_map={"CDI": CONGO_GREEN, "CDD": CONGO_YELLOW},
+                    category_orders={"Secteur": top_secs[::-1]},
+                ),
+                use_container_width=True,
+            )
+            st.caption(
+                "Croisement des offres nettoyées (secteurs harmonisés) restreint aux "
+                "contrats stables CDI et CDD."
+            )
+        else:
+            st.info("Aucune offre en CDI ou CDD pour ce filtre.")
 
     # --------------------------------- Histogramme : distribution des scores IA
     c5, c6 = st.columns(2)

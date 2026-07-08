@@ -119,17 +119,30 @@ _GUARD_HIGH_RAW = _inv_calibrate(GUARD_HIGH_COMPAT)
 CORE_PREFIX_MIN = 6
 
 
-def _lexical_related(a: str, b: str, prefix_min: int = CORE_PREFIX_MIN) -> bool:
+def _lexical_related(
+    a: str, b: str, prefix_min: int = CORE_PREFIX_MIN, substring: bool = True
+) -> bool:
     """Stemming-tolerant token relation for the search-side guard / expansion.
 
     True when two normalized tokens (each length > 3) are the same word up to a
     suffix: one is a substring of the other, or they share a prefix of at least
     ``prefix_min`` characters. Purely lexical — no external stemmer, deterministic.
+
+    ``substring=False`` restricts the substring test to a *prefix* relation (the
+    shorter token must start the longer one, e.g. 'gestion' ↔ 'gestionnaire'),
+    rejecting coincidental *mid-word* embeddings such as 'menage' inside
+    'amenagement'. Used by the strict display-floor AND filter, which must not admit
+    an offer on a spurious internal substring.
     """
     if len(a) <= 3 or len(b) <= 3:
         return False
-    if a in b or b in a:
-        return True
+    if substring:
+        if a in b or b in a:
+            return True
+    else:
+        lo, hi = (a, b) if len(a) <= len(b) else (b, a)
+        if hi.startswith(lo):
+            return True
     n = 0
     for x, y in zip(a, b):
         if x != y:
@@ -371,11 +384,17 @@ class MatchingEngine:
             extra.update(term for term in vocab if _lexical_related(qt, term))
         return prof_text + (" " + " ".join(sorted(extra)) if extra else "")
 
-    def _professional_overlap(self, qprof: set[str], core_tokens: set[str]) -> bool:
+    def _professional_overlap(
+        self, qprof: set[str], core_tokens: set[str], substring: bool = True
+    ) -> bool:
         """True if any professional query token is lexically related (substring /
-        shared prefix ≥ CORE_PREFIX_MIN) to a core professional field token."""
+        shared prefix ≥ CORE_PREFIX_MIN) to a core professional field token.
+
+        ``substring=False`` uses the stricter prefix-only relation (see
+        :func:`_lexical_related`) for the display-floor AND filter.
+        """
         return any(
-            _lexical_related(q, d)
+            _lexical_related(q, d, substring=substring)
             for q in qprof if len(q) > 3
             for d in core_tokens
         )
@@ -423,6 +442,18 @@ class MatchingEngine:
         # Keep only offers whose *text* compatibility clears the floor, best first.
         floor = _inv_calibrate(min_compatibility)
         keep = np.nonzero(text >= floor)[0]
+        # Hardening — strict lexical AND. When the query carries professional keywords,
+        # an offer must share at least one of them (stemming-tolerant) with its core
+        # professional fields (intitulé / poste / secteur). This *rejects* diffuse
+        # bag-of-words false positives below the display floor rather than letting them
+        # fill the bottom of the Top-K — e.g. « femme de ménage » no longer surfaces
+        # « assistant de direction ». A pure-city query (qprof empty) keeps geographic
+        # behaviour unchanged.
+        if qprof and keep.size:
+            keep = keep[[
+                self._professional_overlap(qprof, self._offer_core_tokens[p], substring=False)
+                for p in keep
+            ]]
         keep = keep[np.argsort(-rank_score[keep])][:top_k]
         return [
             MatchResult(
@@ -492,16 +523,29 @@ class MatchingEngine:
             if not (qprof and self._professional_overlap(qprof, self._candidate_core_tokens[pos])):
                 sims[pos] *= SOFT_PENALTY
 
+        # Hard filters are combined by strict intersection (AND): a candidate must
+        # satisfy EVERY active filter. If the intersection is empty the result set is
+        # empty — we never relax a filter or pad the Top-K with off-topic rows.
         mask = np.ones(len(self.candidates), dtype=bool)
         if city:
             mask &= (self.candidates[SIMULATED_CITY_COL].values == city)
         if national_mobility and self._mobility_col:
+            # National-mobility flag: keep only explicit "Oui" (Non / Non déclaré out).
             mob = self.candidates[self._mobility_col].astype(str).map(norm).values
             mask &= (mob == "oui")
 
         # Keep only candidates passing the hard filters AND clearing the % floor.
         floor = _inv_calibrate(min_compatibility)
         keep = np.nonzero(mask & (sims >= floor))[0]
+        # Hardening — strict lexical AND (same rationale as search_offers): when the
+        # query carries professional keywords, a candidate must share one of them with
+        # their core métier / qualification / filière, else they are dropped instead of
+        # padding the Top-K with unrelated profiles. Empty keep → clean empty result.
+        if qprof and keep.size:
+            keep = keep[[
+                self._professional_overlap(qprof, self._candidate_core_tokens[p], substring=False)
+                for p in keep
+            ]]
         keep = keep[np.argsort(-sims[keep])][:top_k]
         return [
             CandidateHit(

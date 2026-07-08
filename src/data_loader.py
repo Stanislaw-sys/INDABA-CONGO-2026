@@ -18,12 +18,13 @@ from the rest of the codebase:
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
 
-from .utils import norm
+from .utils import is_missing, norm
 
 # Repo root = parent of the src/ package.
 ROOT = Path(__file__).resolve().parent.parent
@@ -68,6 +69,149 @@ OFFER_EXT_COLS = ["Description", "Profil", "Compétences"]
 # only). Used by the geographic sub-space for location-aware offer search/filtering.
 OFFER_GEO_COLS = ["Lieu"]
 
+# --- Categorical harmonization (display / analytics only) --------------------
+# These standardized columns are built for the dashboard and human-facing views.
+# CRITICAL: they are derived *after* ``candidate_text`` is assembled, so the raw
+# columns that feed the TF-IDF vectorizer and the métier rule (see src/matching.py)
+# are left byte-for-byte unchanged — harmonization must never move the graded
+# metrics. Only ``niveau_etude`` is normalized in place, and it is neither a
+# matching-text column nor a scoring input (it is used solely by the dashboard).
+STD_METIER_COL = "metier_std"
+STD_QUALIF_METIER_COL = "qualification_metier_std"
+STD_SECTOR_COL = "secteur_std"
+STATUT_COL = "statut_demandeur"
+
+# Human-facing status labels (used by the dashboard "Statut des demandeurs").
+STUDENT_LABEL = "Étudiant(e)"
+STAGIAIRE_LABEL = "Stagiaire"
+PRO_LABEL = "Professionnel / En activité"
+
+# Canonical gender-neutral display labels, keyed on the *normalized* métier value
+# (see utils.norm: lowercased, accent-stripped, punctuation-collapsed). Groups the
+# masculine/feminine variants of the frequent job titles under one clean label so
+# the dashboard doesn't split e.g. Logisticien / Logisticienne into two bars.
+METIER_GENDER_GROUPS = {
+    "logisticien": "Logisticien(ne)", "logisticienne": "Logisticien(ne)",
+    "caissier": "Caissier(ère)", "caissiere": "Caissier(ère)",
+    "electricien": "Électricien(ne)", "electricienne": "Électricien(ne)",
+    "mecanicien": "Mécanicien(ne)", "mecanicienne": "Mécanicien(ne)",
+    "informaticien": "Informaticien(ne)", "informaticienne": "Informaticien(ne)",
+    "technicien": "Technicien(ne)", "technicienne": "Technicien(ne)",
+    "commercial": "Commercial(e)", "commerciale": "Commercial(e)",
+    "assistant": "Assistant(e)", "assistante": "Assistant(e)",
+    "soudeur": "Soudeur(se)", "soudeuse": "Soudeur(se)",
+    "vendeur": "Vendeur(se)", "vendeuse": "Vendeur(se)",
+    "comptable": "Comptable",
+}
+
+# Redundant / near-duplicate sector labels folded under one clean canonical label,
+# keyed on the *normalized* value (see utils.norm: lowercased, accent-stripped,
+# punctuation-collapsed) so every accent/hyphen/ampersand spelling collapses to one
+# key. Two spellings that normalize identically (e.g. the '-' and '&' variants of
+# Éducation - Formation - Enseignement) share a single entry. Extend as variants surface.
+SECTOR_GROUPS = {
+    # Éducation & Enseignement — '… - Formation - Enseignement' and '…, Formation &
+    # Enseignement' both normalize to the same key.
+    "education formation enseignement": "Éducation & Enseignement",
+    # Énergie, Eau & Environnement — merges the energy/water label with the
+    # sanitation/waste/environment label.
+    "energie environnement eau": "Énergie, Eau & Environnement",
+    "assainissement gestion des dechets environnement": "Énergie, Eau & Environnement",
+    # Tourisme, Hôtellerie & Loisirs.
+    "tourisme loisirs voyages": "Tourisme, Hôtellerie & Loisirs",
+    # Transit / Génie logistique — the transport* declensions are caught by the prefix
+    # rule below; this transit-prefixed label is folded into the same pole here.
+    "transit transport et logistique genie logistique":
+        "Transport, Logistique & Supply Chain",
+}
+
+# Prefix-based rules: any normalized label *starting with* the key maps to the label.
+# Used for open-ended families whose declensions all share a leading word, so new
+# spellings are absorbed without enumerating each one. Verified against the data that
+# no unrelated sector shares these prefixes — in particular HSE/QHSE labels start with
+# 'responsable hsse' / 'hsse' / 'environnement' / 'assurance', never 'securite', so
+# the security prefix never swallows an environment/quality offer.
+SECTOR_PREFIX_GROUPS = (
+    ("agriculture", "Agriculture & Agroalimentaire"),  # 3+ Agri/Agroalimentaire spellings
+    ("securite", "Sécurité, Sûreté & Défense"),        # sûreté / défense / gardiennage
+    ("transport", "Transport, Logistique & Supply Chain"),  # aérien / maritime / terrestre / …
+)
+
+_STUDENT_RE = re.compile(r"\betudiant")
+_STAGIAIRE_RE = re.compile(r"stagiaire|\bstage\b")
+
+
+def _canonical_metier(value) -> str:
+    """Clean display label for a métier: student/stagiaire folding, gender grouping,
+    else a whitespace-collapsed title-case of the original. Display only."""
+    n = norm(value)
+    if not n:
+        return ""
+    if _STUDENT_RE.search(n):
+        return STUDENT_LABEL
+    if _STAGIAIRE_RE.search(n):
+        return STAGIAIRE_LABEL
+    if n in METIER_GENDER_GROUPS:
+        return METIER_GENDER_GROUPS[n]
+    return re.sub(r"\s+", " ", str(value).strip()).title()
+
+
+def _canonical_sector(value) -> str:
+    """Group redundant sector labels under one clean canonical label.
+
+    Exact normalized-key match first, then the open-ended prefix rules
+    (Agriculture / Sécurité / Transport families); otherwise the original label is
+    kept (whitespace-collapsed).
+    """
+    n = norm(value)
+    if not n:
+        return ""
+    if n in SECTOR_GROUPS:
+        return SECTOR_GROUPS[n]
+    for prefix, label in SECTOR_PREFIX_GROUPS:
+        if n.startswith(prefix):
+            return label
+    return re.sub(r"\s+", " ", str(value).strip())
+
+
+def _statut(metier, qualif) -> str:
+    """Classify a demandeur as Étudiant(e) / Stagiaire / Professionnel (display)."""
+    blob = f"{norm(metier)} {norm(qualif)}"
+    if _STUDENT_RE.search(blob):
+        return STUDENT_LABEL
+    if _STAGIAIRE_RE.search(blob):
+        return STAGIAIRE_LABEL
+    return PRO_LABEL
+
+
+def _standardize_categoricals(cand: pd.DataFrame) -> None:
+    """In-place: add harmonized categorical columns for display & dashboard analytics.
+
+    MUST run after ``candidate_text`` is built. It never touches the columns that
+    feed matching (``Métier visé / Qualification visée``, ``qualification_metier``,
+    …) — it only *reads* them into new ``*_std`` columns. ``niveau_etude`` is the one
+    field normalized in place (uppercase + strip, merging 'Aucun'/'aucun'/'AUCUN'),
+    and it is not a matching input, so the graded metrics are unaffected.
+    """
+    metier_col = "Métier visé / Qualification visée"
+    qualif_col = "qualification_metier"
+    n = len(cand)
+
+    if "niveau_etude" in cand.columns:
+        cand["niveau_etude"] = cand["niveau_etude"].map(
+            lambda v: pd.NA if is_missing(v) else str(v).strip().upper()
+        )
+
+    src_metier = cand[metier_col] if metier_col in cand.columns else pd.Series([""] * n)
+    src_qualif = cand[qualif_col] if qualif_col in cand.columns else pd.Series([""] * n)
+    cand[STD_METIER_COL] = src_metier.map(_canonical_metier)
+    cand[STD_QUALIF_METIER_COL] = src_qualif.map(_canonical_metier)
+    cand[STD_SECTOR_COL] = (
+        cand["Secteur d'activité"].map(_canonical_sector)
+        if "Secteur d'activité" in cand.columns else ""
+    )
+    cand[STATUT_COL] = [_statut(m, q) for m, q in zip(src_metier, src_qualif)]
+
 
 @dataclass
 class DataBundle:
@@ -109,6 +253,11 @@ def _build_offers(root: Path) -> pd.DataFrame:
     offers["offer_geo_text"] = offers.apply(
         lambda r: " ".join(norm(r.get(c)) for c in OFFER_GEO_COLS).strip(), axis=1
     )
+    # Clean/grouped sector label for dashboard analytics (never fed to the vectorizer).
+    offers[STD_SECTOR_COL] = (
+        offers["Secteur activité"].map(_canonical_sector)
+        if "Secteur activité" in offers.columns else ""
+    )
     offers = offers[offers[OFFER_ID].notna()].reset_index(drop=True)
     return offers
 
@@ -119,6 +268,8 @@ def _build_candidates(root: Path) -> pd.DataFrame:
     cand["candidate_text"] = cand[CANDIDATE_TEXT_COLS].apply(
         lambda r: " ".join(norm(v) for v in r), axis=1
     )
+    # Harmonize categoricals for display/analytics ONLY, after freezing candidate_text.
+    _standardize_categoricals(cand)
     return cand
 
 
