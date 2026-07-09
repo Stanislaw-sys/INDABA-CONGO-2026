@@ -43,7 +43,7 @@ Quatre fichiers Excel fournis, réconciliés dans un pipeline unique (`src/data_
   dégraderait le système. Le signal exploitable provient des champs **métier / qualification /
   filière / secteur métier**.
 
-### 2.1 Localisation des candidats — variable simulée
+### 2.1 Localisation des candidats : variable simulée
 
 Le fichier des demandeurs ne contient **aucune ville exploitable** (`Mobilité géographique` n'est
 qu'un indicateur Oui/Non). Or le guide demande la « répartition géographique … des candidats » dans
@@ -109,7 +109,7 @@ indépendants** :
 
 1. **Similarité textuelle (cœur du moteur).** Le profil du demandeur est vectorisé en **TF-IDF avec
    n-grammes de longueur 1 à 2**, chaque offre de même dans l'espace professionnel. La compatibilité
-   est la **similarité cosinus** entre les deux vecteurs, avec **normalisation L2** — celle-ci borne
+   est la **similarité cosinus** entre les deux vecteurs, avec **normalisation L2**, celle-ci borne
    naturellement l'effet de la longueur, de sorte qu'une description enrichie longue et un intitulé
    court se comparent équitablement.
    *Justification :* les taxonomies de secteurs diffèrent entre les deux côtés. Une correspondance
@@ -170,7 +170,7 @@ embeddings sémantiques). Nous avons évalué chaque famille au regard de **quat
 problème** : (i) l'appariement pèse 30 % de la note et l'**explicabilité** est explicitement
 récompensée ; (ii) la vérité terrain ne fournit que **3 offres pertinentes par candidat** (signal
 d'entraînement très maigre et déséquilibré) ; (iii) seules **143/2 535 offres** ont un descriptif
-détaillé — le texte est donc court et partiel ; (iv) le prototype doit **tourner sur l'hébergement
+détaillé, le texte est donc court et partiel ; (iv) le prototype doit **tourner sur l'hébergement
 gratuit** (CPU, ~1 Go RAM) et rester reproductible.
 
 | Approche | Avantages | Pourquoi écartée / retenue ici |
@@ -203,7 +203,7 @@ La garde douce (§3.1-3) protège le **cœur** du moteur. Les **onglets d'explor
 visuelle** (recherche d'offres et de candidats, bonus 1) ajoutent une seconde barrière, plus
 stricte, contre les **faux positifs à bas score** qui polluaient le bas du classement :
 
-- **Filtre d'intersection lexicale (ET logique).** Une offre — resp. un candidat — n'est retenue que
+- **Filtre d'intersection lexicale (ET logique).** Une offre, respectivement un candidat, n'est retenue que
   si le mot-clé professionnel de la requête (ou du métier visé) partage **au moins un token** avec
   ses champs cœur (intitulé / poste / secteur). À défaut, elle est **rejetée sous le seuil
   d'affichage (45 %)** plutôt que de combler le Top-K : une recherche **« Femme de ménage »** ne
@@ -235,7 +235,7 @@ déterminants `de transit`, `transit`, `agent de`, `logistique`.
 ## 5. Recommandation Top-K et évaluation
 
 Le système produit pour chaque demandeur les Top-5 et Top-10 offres, au format de soumission
-`candidate_id, rank, job_id, score` (`scripts/generate_recommendations.py` →
+`candidate_id, rank, job_id, score` (`scripts/generate_recommendations.py` ->
 `outputs/recommendations_top{5,10}.csv`).
 
 **Évaluation** contre la vérité terrain, sur **l'ensemble des 41 285 demandeurs** :
@@ -265,7 +265,7 @@ confort d'exploration, pas la performance mesurée.
 
 ## 6. Fonctionnalités bonus
 
-- **Bonus 1 — Recherche intelligente (langage naturel), offres *et* candidats.**
+- **Bonus 1 : Recherche intelligente (langage naturel), offres *et* candidats.**
   - *Côté offres* : la requête (« développeur informatique à Brazzaville ») est vectorisée dans
     l'espace **professionnel** et classée par similarité cosinus ; si elle mentionne une localité
     connue, l'**espace géographique indépendant** (§3.0) ajoute un bonus aux offres effectivement
@@ -277,7 +277,7 @@ confort d'exploration, pas la performance mesurée.
     filtres ; la ville mentionnée dans la phrase est **détectée automatiquement**
     (`src/matching.py::search_candidates`). Cela couvre les deux exemples du guide
     (« développeur Python à Brazzaville », « candidat en comptabilité avec mobilité nationale »).
-- **Bonus 2 — Analyse des écarts de compétences (skill gap).** Pour chaque offre recommandée, le
+- **Bonus 2 : Analyse des écarts de compétences (skill gap).** Pour chaque offre recommandée, le
   système extrait les compétences/exigences (issues du descriptif enrichi lorsqu'il existe, sinon de
   l'intitulé et du secteur), retire les mots-outils, et renvoie celles absentes du profil du
   candidat ainsi qu'un taux de couverture (`src/explain.py::skill_gap`). Cela oriente le demandeur
@@ -294,7 +294,7 @@ localité simulée, §2.1), types de contrat, et **statistiques sur les recomman
 
 Depuis l'harmonisation catégorielle (§2.2), le **filtre sectoriel** propose des étiquettes
 consolidées ; le graphique des **métiers techniques les plus demandés exclut** les profils
-**« Étudiant(e) »** et **« Stagiaire »** — désormais isolés dans une **carte KPI dédiée « Statut des
+**« Étudiant(e) »** et **« Stagiaire »**, désormais isolés dans une **carte KPI dédiée « Statut des
 demandeurs d'emploi »**, afin de ne pas fausser le classement des vrais métiers ; enfin une vue
 croise les **secteurs offrant le plus d'opportunités par type de contrat (CDI / CDD)**.
 
@@ -331,7 +331,7 @@ lourde : le système fonctionne intégralement sur scikit-learn (pas de GPU requ
   millier, métriques inchangées) et disparaîtrait avec un espace sémantique (ci-dessous).
 - **Embeddings sémantiques** : l'architecture est prévue pour accueillir un backend
   Sentence-Transformers (déjà anticipé dans `requirements.txt`), qui pourrait capter des synonymes
-  métier au-delà du recouvrement lexical — et rendre la garde robuste aux variantes lexicales.
+  métier au-delà du recouvrement lexical, et rendre la garde robuste aux variantes lexicales.
 - **Apprentissage supervisé** : la vérité terrain pourrait servir à apprendre les poids de
   combinaison (learning-to-rank) plutôt que de les fixer à 0,80 / 0,20.
 
