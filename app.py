@@ -494,6 +494,68 @@ elif nav == NAV_DASH:
         st.warning("Aucune donnée ne correspond à ces filtres. Élargissez la sélection.")
         st.stop()
 
+    # ------------------------------------- Cartographie des opportunités d'emploi
+    # Carte HORS-LIGNE : géométries Natural Earth intégrées à Plotly (px.scatter_geo),
+    # donc AUCUN appel à un serveur de tuiles — le rendu reste instantané, contrairement
+    # à un fond « open-street-map » qui télécharge des tuiles raster à chaque interaction.
+    # Coordonnées des 21 lieux réellement présents dans les offres (les libellés
+    # « Bouenza » / « Kouilou » sont des départements → placés sur leur chef-lieu ;
+    # « Lkouala » = Likouala). Fenêtre géographique fixe sur le Congo pour un cadrage
+    # stable même quand un filtre ne laisse qu'une seule ville.
+    CONGO_GEO_COORDS = {
+        "Pointe-Noire": (-4.7774, 11.8664), "Brazzaville": (-4.2661, 15.2832),
+        "Bouenza": (-4.1539, 13.5500),      "Kouilou": (-4.2500, 11.8500),
+        "Nkayi": (-4.1806, 13.2922),        "Ouesso": (1.6133, 16.0517),
+        "Kayes": (-4.2125, 13.2847),        "Bouansa": (-4.2314, 13.7633),
+        "Lkouala": (2.0000, 17.5000),       "Mayoko": (-2.3000, 12.8300),
+        "Impfondo": (1.6139, 18.0667),      "Divenie": (-2.6900, 12.0800),
+        "Dolisie": (-4.1962, 12.6739),      "Owando": (-0.4819, 15.8994),
+        "Oyo": (-1.1500, 15.9833),          "Boundji": (-1.0333, 15.3833),
+        "Loango": (-4.6500, 11.8000),       "Hinda": (-4.4667, 11.9000),
+        "Gamboma": (-1.8764, 15.8642),      "Ntokou": (-0.7500, 15.8000),
+        "Ewo": (-0.8722, 14.8189),
+    }
+    with st.container(border=True):
+        st.markdown("**🗺️ Cartographie des opportunités d'emploi au Congo**")
+        geo = (off_f["Lieu"].astype(str).str.strip().str.title()
+               .replace("", pd.NA).dropna().value_counts().reset_index())
+        geo.columns = ["Lieu", "Offres"]
+        geo["lat"] = geo["Lieu"].map(lambda x: CONGO_GEO_COORDS.get(x, (None, None))[0])
+        geo["lon"] = geo["Lieu"].map(lambda x: CONGO_GEO_COORDS.get(x, (None, None))[1])
+        mapped = geo.dropna(subset=["lat", "lon"])
+        if not mapped.empty:
+            fig_map = px.scatter_geo(
+                mapped, lat="lat", lon="lon", size="Offres", color="Offres",
+                hover_name="Lieu",
+                hover_data={"Offres": True, "lat": False, "lon": False},
+                color_continuous_scale=["#C8E6C9", "#66BB6A", CONGO_GREEN, "#00391C"],
+                size_max=42, projection="mercator",
+            )
+            # Fenêtre fixe englobant tout le territoire congolais.
+            fig_map.update_geos(
+                center={"lat": -0.7, "lon": 15.0},
+                lataxis_range=[-5.6, 4.2], lonaxis_range=[10.6, 19.4],
+                resolution=50, showframe=False,
+                showcountries=True, countrycolor="#B0BEC5", countrywidth=0.9,
+                showland=True, landcolor="#F4F7F4",
+                showocean=True, oceancolor="#E7F1F8",
+                showlakes=True, lakecolor="#E7F1F8",
+                coastlinecolor="#90A4AE", coastlinewidth=0.6,
+            )
+            fig_map.update_traces(marker=dict(line=dict(width=0.7, color="white")))
+            fig_map.update_layout(
+                margin={"r": 0, "t": 6, "l": 0, "b": 0}, height=430,
+                coloraxis_colorbar=dict(title="Offres"),
+            )
+            st.plotly_chart(fig_map, use_container_width=True)
+            st.caption(
+                f"Taille et couleur des bulles ∝ nombre d'offres par localité — "
+                f"{int(mapped['Offres'].sum()):,} offres géolocalisées sur {len(mapped)} lieux. "
+                "Carte hors-ligne (aucun serveur de tuiles), rendu instantané."
+            )
+        else:
+            st.info("Aucune offre géolocalisable pour cette sélection.")
+
     # -------------------------------------------- Statut des demandeurs d'emploi
     # Les profils « Étudiant(e) » / « Stagiaire » ne sont pas des métiers techniques :
     # on les isole ici pour ne pas fausser le classement des vrais métiers plus bas.
