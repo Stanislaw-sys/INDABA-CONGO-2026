@@ -61,7 +61,7 @@ Le guide autorise règles, TF-IDF, ML supervisé ou embeddings. Notre arbitrage 
 
 | Approche | Verdict |
 |---|---|
-| Règles métier seules | Trop rigides (taxonomies divergentes) — **gardées en complément** (0,20). |
+| Règles métier seules | Trop rigides (taxonomies divergentes) : **gardées en complément** (0,20). |
 | **TF-IDF + cosinus** | Robuste, rapide, **explicable terme à terme**, sans entraînement : **cœur du moteur** (0,80). |
 | ML supervisé (LTR) | Vérité terrain trop maigre (3 positifs/candidat) → surapprentissage : **écarté**. |
 | Embeddings (SBERT) | Trop lourd pour le free tier, gain incertain sur textes courts : **architecture prête, non activé**. |
