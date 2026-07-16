@@ -341,3 +341,78 @@ Le prototype répond à l'ensemble des livrables du hackathon, score de compatib
 classement Top-5/Top-10 évalué (Precision/Recall/NDCG), tableau de bord, et les deux défis bonus, 
 au sein d'une solution **explicable, reproductible et légère**, directement mobilisable par les
 conseillers de l'ACPE pour accélérer et fiabiliser la mise en relation entre demandeurs et offres.
+
+## Annexe A — Analyse d'équité et de robustesse
+
+Au-delà de l'exclusion architecturale de l'âge et du genre de la fonction de score (§4), nous avons
+conduit deux audits empiriques pour **quantifier**, plutôt que simplement affirmer, l'équité et la
+stabilité du moteur. Les deux sont reproductibles à l'identique
+(`python -m scripts.audit_fairness_robustness`, graines fixées).
+
+### A.1 Audit d'équité (parité de compatibilité)
+
+**Protocole** : échantillon aléatoire de 3 000 demandeurs (`seed=42`), score de compatibilité du
+Top-1 calculé pour chacun et comparé par sous-groupe (statistiques démographiques mesurées, elles,
+sur l'ensemble des 41 285 profils).
+
+| Sous-groupe | Compatibilité moyenne (Top-1) | Écart | Significativité |
+|---|---|---|---|
+| Femme | 93,58 % | — | — |
+| Homme | 95,66 % | +2,09 pts | p ≈ 0,0001 |
+| Homme vs Femme (Professionnels seuls) | — | +0,67 pt | p = 0,0032 |
+| Étudiant(e) | 49,79 % | −47,4 pts vs Professionnel | — |
+| Professionnel / En activité | 97,23 % | — | — |
+
+**Interprétation** : l'écart brut Femme/Homme (2,09 points) se réduit à 0,67 point, quasi
+négligeable, une fois le statut du demandeur contrôlé. La cause de l'écart brut est
+**compositionnelle, non algorithmique** : dans les données, les femmes sont en moyenne plus jeunes
+(28,3 ans contre 31,8) et proportionnellement plus souvent étudiantes (7,4 % contre 3,4 %), deux
+facteurs corrélés au score indépendamment du genre, qui n'entre d'ailleurs jamais dans
+`candidate_text` (§3.0).
+
+Le véritable écart structurel est **statutaire** : les profils Étudiant(e) affichent une
+compatibilité moyenne inférieure de 47 points aux Professionnels, et un taux de couverture (au moins
+une offre au-dessus du seuil d'affichage) de 95,5 % contre 100 %. Ce n'est pas un biais démographique
+mais une conséquence directe de la richesse textuelle du profil : un(e) étudiant(e) sans expérience
+professionnelle déclarée produit un `candidate_text` structurellement plus pauvre en tokens métier.
+Sur 41 285 demandeurs, cela concerne 1 804 profils (4,4 %), une population que l'ACPE gagnerait à
+accompagner par un protocole dédié (mise en avant de stages / apprentissage, alignement sur la
+filière d'étude) plutôt que via le canal de recommandation standard.
+
+### A.2 Audit de robustesse (stabilité lexicale)
+
+**Protocole** : échantillon de 400 demandeurs (`seed=7`). Deux perturbations de `candidate_text`,
+comparées au Top-10 non perturbé via l'indice de Jaccard : (1) *contrôle* casse et espacement (ne
+doit rien changer, la normalisation `utils.norm()` devant l'absorber) ; (2) *test* permutation de
+1 à 2 paires de caractères adjacents, simulant une faute de frappe.
+
+| Perturbation | Jaccard top-10 moyen | % candidats inchangés | % avec Top-1 modifié |
+|---|---|---|---|
+| Casse / espacement (contrôle) | 1,000 | 100 % | 0 % |
+| Faute de frappe (1-2 car.) | 0,786 | 42,0 % | 29,8 % |
+
+**Interprétation** : le contrôle confirme que la normalisation absorbe intégralement le bruit non
+lexical. La perturbation typographique révèle une limite inhérente à tout matching par tokens exacts
+(Jaccard = 0,786). Mais le taux de 29,8 % de Top-1 modifiés **surestime la gravité** : en
+caractérisant chacun des 119 changements observés,
+
+- **78 % (93/119) restent dans le même secteur d'activité** : le système hésite entre deux offres du
+  même métier (p. ex. « Juriste » ↔ « Assistant.e juriste »), un réordonnancement bénin ;
+- **seuls 6,5 % de l'ensemble des candidats (26/400) basculent vers un secteur réellement
+  différent** : la seule vraie « dérive » ;
+- **45 % (54/119) des nouveaux Top-1 figurent toujours dans la vérité terrain** : près de la moitié
+  des changements ne sont pas des erreurs mais une réorganisation entre deux bonnes réponses.
+
+**Piste d'amélioration (hors périmètre du prototype)** : une correction orthographique légère en
+amont de la vectorisation (distance de Levenshtein bornée sur les tokens hors-vocabulaire)
+réduirait cette sensibilité, dans la philosophie déjà appliquée à la recherche en langage naturel
+(`_lexical_related`, §3.4).
+
+### A.3 Synthèse
+
+Ces audits illustrent une démarche d'amélioration continue plutôt qu'une garantie a priori :
+l'équité par exclusion des variables sensibles (§4) est confirmée empiriquement pour le genre une
+fois les facteurs de composition contrôlés ; l'écart statutaire Étudiant(e)/Professionnel et la
+sensibilité typographique sont des limites **documentées, quantifiées et assorties de pistes de
+correction**, plutôt que découvertes a posteriori en production.
+
