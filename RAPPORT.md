@@ -342,7 +342,7 @@ classement Top-5/Top-10 évalué (Precision/Recall/NDCG), tableau de bord, et le
 au sein d'une solution **explicable, reproductible et légère**, directement mobilisable par les
 conseillers de l'ACPE pour accélérer et fiabiliser la mise en relation entre demandeurs et offres.
 
-## Annexe A — Analyse d'équité et de robustesse
+## Annexe A : Analyse d'équité et de robustesse
 
 Au-delà de l'exclusion architecturale de l'âge et du genre de la fonction de score (§4), nous avons
 conduit deux audits empiriques pour **quantifier**, plutôt que simplement affirmer, l'équité et la
