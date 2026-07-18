@@ -1,7 +1,5 @@
 # Section additionnelle : Analyse d'Équité et de Robustesse
 
-> À insérer après la section 4 (Ingénierie de l'Explicabilité et Équité) du rapport, ou en annexe si l'espace est contraint. Rédigé pour s'insérer dans le style du rapport existant. Adapte les numéros de section à ta pagination réelle.
-
 ## 4bis. Analyse Complémentaire : Équité et Robustesse
 
 Au-delà de l'exclusion architecturale de l'âge et du genre de la fonction de score (§4), nous avons conduit deux audits empiriques pour quantifier, plutôt que simplement affirmer, l'équité et la stabilité du moteur.
